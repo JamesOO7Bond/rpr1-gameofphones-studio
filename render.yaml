@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: gameofphones-studio
+    runtime: docker
+    region: frankfurt
+    plan: starter
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: ELEVENLABS_API_KEY
+        sync: false            # im Render-Dashboard eintragen (Workspace biglayla@bigfm.de)
+      - key: AGENT_ID
+        value: agent_0901m4tq89w0eha9a8v0swg8770h
+      - key: ALLOWED_IPS
+        sync: false            # Komma-Liste: öffentliche IPs/Netze der ATSW-Studios
+      - key: CLIENT_IP_SOURCE
+        value: auto
+      - key: ACCESS_CODE
+        sync: false            # zweites Schloss; leer lassen = aus
+      - key: COOKIE_SECRET
+        generateValue: true
+      - key: CONNECTION_TYPE
+        value: websocket       # oder webrtc

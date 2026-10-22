@@ -1,0 +1,274 @@
+/* RPR1. Game of Phones – Studio-Dashboard (Browser-Teil) */
+(function () {
+  "use strict";
+
+  const $ = (id) => document.getElementById(id);
+  const el = {
+    dot: $("status-dot"), label: $("status-label"), hint: $("status-hint"),
+    region: $("region"), timer: $("timer"), name: $("name"), ort: $("ort"),
+    start: $("btn-start"), startText: $("btn-start-text"),
+    mute: $("btn-mute"), muteText: $("btn-mute-text"), micOn: $("icon-mic-on"), micOff: $("icon-mic-off"),
+    end: $("btn-end"), message: $("message"), rounds: $("rounds"),
+    inputDev: $("input-device"), outputDev: $("output-device"),
+    badgeNet: $("badge-net"), badgeNetText: $("badge-net-text"),
+    footerVersion: $("footer-version"), footerConn: $("footer-conn"),
+  };
+
+  let conversation = null;
+  let conversationId = null;
+  let plannedRegion = null;
+  let muted = false;
+  let timerHandle = null;
+  let startedAt = 0;
+  let mock = false;
+
+  // ----- Hilfen ----------------------------------------------------------
+  function setStatus(kind, label, hint) {
+    el.dot.className = "dot-status" + (kind ? " " + kind : "");
+    el.label.textContent = label;
+    el.hint.textContent = hint;
+  }
+  function showMessage(text, info) {
+    if (!text) { el.message.classList.add("hidden"); el.message.textContent = ""; return; }
+    el.message.textContent = text;
+    el.message.classList.toggle("info", !!info);
+    el.message.classList.remove("hidden");
+  }
+  function fmt(sec) {
+    const m = Math.floor(sec / 60), s = sec % 60;
+    return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+  }
+  function startTimer() {
+    startedAt = Date.now();
+    el.timer.textContent = "00:00";
+    timerHandle = setInterval(() => {
+      el.timer.textContent = fmt(Math.floor((Date.now() - startedAt) / 1000));
+    }, 500);
+  }
+  function stopTimer() { if (timerHandle) clearInterval(timerHandle); timerHandle = null; }
+  function setMuteUi(isMuted) {
+    muted = isMuted;
+    el.mute.setAttribute("aria-pressed", isMuted ? "true" : "false");
+    el.muteText.textContent = isMuted ? "Mikro an" : "Stumm";
+    el.micOn.classList.toggle("hidden", isMuted);
+    el.micOff.classList.toggle("hidden", !isMuted);
+  }
+  function setLiveUi(live) {
+    el.start.disabled = live;
+    el.start.classList.remove("busy");
+    el.startText.textContent = "Start";
+    el.mute.disabled = !live;
+    el.end.disabled = !live;
+    el.region.disabled = live;
+    el.name.disabled = live;
+    el.ort.disabled = live;
+  }
+  async function api(path, body) {
+    const opts = body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {};
+    const res = await fetch(path, opts);
+    if (res.status === 401) { window.location.href = "/login"; throw new Error("Zugangscode fehlt"); }
+    if (!res.ok) {
+      let detail = res.statusText;
+      try { const j = await res.json(); detail = j.detail || j.fehler || detail; } catch (e) { /* leer */ }
+      throw new Error(detail);
+    }
+    return res.json();
+  }
+
+  // ----- Zustand laden ---------------------------------------------------
+  function renderRounds(rounds) {
+    if (!rounds || !rounds.length) { el.rounds.innerHTML = '<div class="muted">Noch keine Runden.</div>'; return; }
+    el.rounds.innerHTML = "";
+    for (const r of rounds) {
+      const d = new Date(r.start_time * 1000);
+      const time = d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+      const day = d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+      const who = [r.kandidat_name, r.kandidat_ort].filter(Boolean).join(", ") || "Kandidat unbekannt";
+      const parts = [r.region || r.planned_region, r.kategorie, r.loesung].filter(Boolean);
+      let result = "";
+      if (r.ergebnis) {
+        const ok = /richtig/i.test(r.ergebnis);
+        result = '<span class="' + (ok ? "ok" : "fail") + '">' + escapeHtml(r.ergebnis) + "</span>";
+      } else if (r.status === "offen") {
+        result = '<span class="muted">läuft / Auswertung ausstehend</span>';
+      } else if (r.status === "ohne_analyse") {
+        result = '<span class="muted">ohne Auswertung</span>';
+      }
+      const row = document.createElement("div");
+      row.className = "round";
+      row.innerHTML = '<span class="time" title="' + day + '">' + time + "</span>" +
+        '<span><span class="who">' + escapeHtml(who) + "</span> " +
+        '<span class="what">' + escapeHtml(parts.join(" · ")) + (parts.length ? " · " : "") + "</span>" + result + "</span>";
+      el.rounds.appendChild(row);
+    }
+  }
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  async function loadState() {
+    try {
+      const s = await api("/api/state");
+      if (!el.region.options.length) {
+        for (const name of s.regions) {
+          const o = document.createElement("option");
+          o.value = name; o.textContent = name; el.region.appendChild(o);
+        }
+      }
+      if (!conversation) el.region.value = s.next_region;
+      renderRounds(s.rounds);
+      el.footerVersion.textContent = "Studio-Dashboard " + s.version;
+      el.footerConn.textContent = "Verbindung: " + s.connection_type + (s.code ? " · Zugangscode aktiv" : "");
+      if (s.ip_filter) {
+        el.badgeNet.classList.remove("warn");
+        el.badgeNetText.textContent = "Nur ATSW-Netz";
+      } else {
+        el.badgeNet.classList.add("warn");
+        el.badgeNetText.textContent = "IP-Sperre aus";
+      }
+    } catch (err) {
+      showMessage("Zustand konnte nicht geladen werden: " + err.message);
+    }
+  }
+
+  // ----- Audiogeräte -----------------------------------------------------
+  async function loadDevices() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      fillDevices(el.inputDev, devices.filter((d) => d.kind === "audioinput"), localStorage.getItem("gop.input") || "");
+      fillDevices(el.outputDev, devices.filter((d) => d.kind === "audiooutput"), localStorage.getItem("gop.output") || "");
+    } catch (e) { /* ohne Berechtigung keine Namen, egal */ }
+  }
+  function fillDevices(select, list, chosen) {
+    select.innerHTML = "";
+    const def = document.createElement("option");
+    def.value = ""; def.textContent = "Standard des Browsers";
+    select.appendChild(def);
+    for (const d of list) {
+      const o = document.createElement("option");
+      o.value = d.deviceId; o.textContent = d.label || ("Gerät " + (select.options.length));
+      select.appendChild(o);
+    }
+    select.value = chosen;
+    if (select.value !== chosen) select.value = "";
+  }
+  el.inputDev.addEventListener("change", () => { try { localStorage.setItem("gop.input", el.inputDev.value); } catch (e) { /* leer */ } });
+  el.outputDev.addEventListener("change", () => { try { localStorage.setItem("gop.output", el.outputDev.value); } catch (e) { /* leer */ } });
+  $("refresh-devices").addEventListener("click", async () => {
+    try { await navigator.mediaDevices.getUserMedia({ audio: true }); } catch (e) { /* abgelehnt */ }
+    loadDevices();
+  });
+
+  // ----- Runde starten ---------------------------------------------------
+  async function start() {
+    showMessage("");
+    el.start.disabled = true;
+    el.start.classList.add("busy");
+    el.startText.textContent = "Verbinde …";
+    setStatus("busy", "Verbinde", "Signierte Sitzung wird geholt, Mikrofon wird geöffnet.");
+    try {
+      // Mikrofon im Klick öffnen, damit der Browser nicht blockt
+      try { await navigator.mediaDevices.getUserMedia({ audio: true }); } catch (e) { throw new Error("Kein Mikrofonzugriff im Browser."); }
+      const body = { name: el.name.value, ort: el.ort.value, region: el.region.value };
+      const s = await api("/api/session", body);
+      plannedRegion = s.region;
+      el.region.value = s.region;
+      mock = !!s.mock;
+      if (mock) {
+        conversationId = "mock-" + Date.now();
+        conversation = {
+          setMicMuted: () => {},
+          endSession: async () => { onDisconnected({ reason: "user" }); },
+        };
+        await api("/api/rounds/register", { conversation_id: conversationId, region: plannedRegion, name: el.name.value, ort: el.ort.value });
+        onConnected();
+        return;
+      }
+      if (!window.ElevenLabsClient || !window.ElevenLabsClient.Conversation) throw new Error("ElevenLabs-Bibliothek nicht geladen.");
+      const opts = {
+        connectionType: s.connection_type,
+        dynamicVariables: s.dynamic_variables,
+        onConnect: ({ conversationId: id }) => {
+          conversationId = id;
+          api("/api/rounds/register", { conversation_id: id, region: plannedRegion, name: el.name.value, ort: el.ort.value }).catch(() => {});
+          onConnected();
+        },
+        onDisconnect: (details) => onDisconnected(details),
+        onError: (message) => showMessage("Fehler der Verbindung: " + message),
+        onModeChange: ({ mode }) => {
+          if (!conversation || muted) return;
+          if (mode === "speaking") setStatus("live", "Live · KI spricht", "Die KI redet gerade.");
+          else setStatus("live", "Live · KI hört zu", "Verbunden mit dem Studio-Agenten.");
+        },
+      };
+      if (s.signed_url) opts.signedUrl = s.signed_url;
+      if (s.conversation_token) opts.conversationToken = s.conversation_token;
+      const inputId = el.inputDev.value, outputId = el.outputDev.value;
+      if (inputId) opts.inputDeviceId = inputId;
+      if (outputId) opts.outputDeviceId = outputId;
+      conversation = await window.ElevenLabsClient.Conversation.startSession(opts);
+    } catch (err) {
+      conversation = null;
+      setLiveUi(false);
+      setStatus("", "Bereit", "KI ist nicht verbunden. Start drücken, wenn der Kandidat in der Leitung ist.");
+      showMessage("Start fehlgeschlagen: " + err.message);
+    }
+  }
+
+  function onConnected() {
+    setMuteUi(false);
+    setLiveUi(true);
+    startTimer();
+    setStatus("live", "Live · KI hört zu", "Verbunden. Jetzt off air den Kandidaten ansagen.");
+    loadDevices();
+  }
+
+  async function onDisconnected(details) {
+    stopTimer();
+    const id = conversationId;
+    conversation = null;
+    setLiveUi(false);
+    setMuteUi(false);
+    const reason = details && details.reason ? details.reason : "";
+    if (reason === "error") showMessage("Verbindung abgebrochen: " + (details.message || "unbekannter Fehler"));
+    setStatus("busy", "Auswertung", "Gespräch beendet. Die Datenerfassung von ElevenLabs wird geholt …");
+    if (id) {
+      try { await api("/api/rounds/" + encodeURIComponent(id) + "/sync", {}); }
+      catch (err) { showMessage("Auswertung noch nicht da: " + err.message, true); }
+    }
+    conversationId = null;
+    setStatus("", "Bereit", "KI ist nicht verbunden. Start drücken, wenn der Kandidat in der Leitung ist.");
+    el.timer.textContent = "00:00";
+    await loadState();
+  }
+
+  function toggleMute() {
+    if (!conversation) return;
+    const next = !muted;
+    try { conversation.setMicMuted(next); } catch (e) { showMessage("Stummschalten fehlgeschlagen: " + e.message); return; }
+    setMuteUi(next);
+    if (next) setStatus("muted", "Mikro stumm", "Die KI hört gerade nichts. Zum Weiterspielen Mikro an.");
+    else setStatus("live", "Live · KI hört zu", "Verbunden mit dem Studio-Agenten.");
+  }
+
+  async function end() {
+    if (!conversation) return;
+    el.end.disabled = true;
+    try { await conversation.endSession(); }
+    catch (e) { showMessage("Beenden fehlgeschlagen: " + e.message); el.end.disabled = false; }
+  }
+
+  // ----- Verdrahtung -----------------------------------------------------
+  el.start.addEventListener("click", start);
+  el.mute.addEventListener("click", toggleMute);
+  el.end.addEventListener("click", end);
+  $("clear-candidate").addEventListener("click", () => { el.name.value = ""; el.ort.value = ""; });
+  window.addEventListener("beforeunload", (e) => { if (conversation) { e.preventDefault(); e.returnValue = ""; } });
+
+  setMuteUi(false);
+  setLiveUi(false);
+  loadState();
+  loadDevices();
+  setInterval(() => { if (!conversation) loadState(); }, 60000);
+})();

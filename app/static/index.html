@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Game of Phones · Studio</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="page">
+
+<header class="hero">
+  <div class="hero-inner">
+    <div>
+      <div class="wordmark">RPR1<span class="dot">.</span></div>
+      <div class="title">Game of Phones</div>
+      <div class="subtitle">Studio-Steuerung · iPhone-KI</div>
+    </div>
+    <div class="badges">
+      <span class="badge" id="badge-net" title="IP-Sperre">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+        <span id="badge-net-text">Nur ATSW-Netz</span>
+      </span>
+    </div>
+  </div>
+</header>
+
+<main class="main">
+
+  <section class="card status" aria-label="Status">
+    <div class="status-left">
+      <span class="dot-status" id="status-dot" aria-hidden="true"></span>
+      <div>
+        <div class="status-label" id="status-label">Bereit</div>
+        <div class="status-hint" id="status-hint">KI ist nicht verbunden. Start drücken, wenn der Kandidat in der Leitung ist.</div>
+      </div>
+    </div>
+    <div class="status-right">
+      <div>
+        <div class="eyebrow">Nächste Region</div>
+        <select id="region" class="region-select" aria-label="Region dieser Runde"></select>
+      </div>
+      <div class="timer-box">
+        <div class="eyebrow">Gesprächsdauer</div>
+        <div class="timer" id="timer">00:00</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card candidate" aria-label="Kandidat">
+    <div class="eyebrow">Kandidat (optional, hilft der KI beim Namen)</div>
+    <div class="candidate-row">
+      <label>Vorname <input id="name" type="text" autocomplete="off" placeholder="z. B. Sabine" maxlength="60"></label>
+      <label>Wohnort <input id="ort" type="text" autocomplete="off" placeholder="z. B. Daun" maxlength="60"></label>
+      <button type="button" class="link-btn" id="clear-candidate">Leeren</button>
+    </div>
+  </section>
+
+  <button type="button" class="btn-start" id="btn-start">
+    <svg width="56" height="56" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z"></path></svg>
+    <span id="btn-start-text">Start</span>
+  </button>
+
+  <div class="btn-row">
+    <button type="button" class="btn-mute" id="btn-mute" disabled aria-pressed="false">
+      <svg id="icon-mic-on" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"></rect><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><path d="M12 19v3"></path></svg>
+      <svg id="icon-mic-off" class="hidden" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 2l20 20"></path><path d="M9 9v3a3 3 0 0 0 5.12 2.12"></path><path d="M15 9.34V5a3 3 0 0 0-5.94-.6"></path><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2c0 .7-.1 1.37-.29 2"></path><path d="M12 19v3"></path></svg>
+      <span id="btn-mute-text">Stumm</span>
+    </button>
+    <button type="button" class="btn-end" id="btn-end" disabled>
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"></rect></svg>
+      <span>Beenden</span>
+    </button>
+  </div>
+
+  <p class="message hidden" id="message" role="status"></p>
+
+  <section class="steps" aria-label="Ablauf">
+    <div class="card step"><div class="eyebrow">1 · Off air</div><div>Start drücken, dann ansagen: „Gleich spielt Name aus Ort.“</div></div>
+    <div class="card step"><div class="eyebrow">2 · On air</div><div>„Hey Siri, starte das RPR1 Game of Phones.“</div></div>
+    <div class="card step"><div class="eyebrow">3 · Danach</div><div>Die KI legt nach der Auflösung selbst auf. Beenden nur im Notfall.</div></div>
+  </section>
+
+  <section class="card rounds" aria-label="Letzte Runden">
+    <div class="eyebrow">Letzte Runden</div>
+    <div id="rounds" class="rounds-list"><div class="muted">Noch keine Runden.</div></div>
+  </section>
+
+  <details class="card audio">
+    <summary class="eyebrow">Audio-Geräte</summary>
+    <div class="audio-row">
+      <label>Eingang (Studio-Feed zur KI) <select id="input-device"></select></label>
+      <label>Ausgang (Stimme der KI) <select id="output-device"></select></label>
+      <button type="button" class="link-btn" id="refresh-devices">Geräte neu laden</button>
+    </div>
+    <p class="muted small">Die Auswahl wird in diesem Browser gespeichert und gilt ab dem nächsten Start.</p>
+  </details>
+
+</main>
+
+<footer class="footer">
+  <span id="footer-version">Studio-Dashboard</span>
+  <span>·</span>
+  <span id="footer-conn"></span>
+</footer>
+
+</div>
+<script src="/static/vendor/elevenlabs-client-1.30.0.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

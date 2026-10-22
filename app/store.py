@@ -21,7 +21,7 @@ from .regions import normalize_region
 
 log = logging.getLogger("gop.store")
 
-DATA_FIELDS = ("kandidat_name", "kandidat_ort", "kategorie", "region", "loesung", "ergebnis")
+DATA_FIELDS = ("kandidat_name", "kandidat_ort", "kategorie", "region", "loesung", "ergebnis", "frage_nr")
 
 
 @dataclass
@@ -37,6 +37,8 @@ class Round:
     region: str | None = None
     loesung: str | None = None
     ergebnis: str | None = None
+    frage_nr: str | None = None
+    planned_numbers: list = field(default_factory=list)
     summary: str | None = None
     extra: dict = field(default_factory=dict)
 
@@ -83,7 +85,17 @@ class RoundStore:
                 out.append(name)
         return out
 
-    def recent_solutions(self, limit: int = 12) -> list[str]:
+    def recent_numbers(self) -> list[int]:
+        """Gespielte Fragennummern, neueste zuerst; ohne Auswertung zählen alle sechs vorgeschlagenen."""
+        out: list[int] = []
+        for r in self.ordered():
+            if r.frage_nr and str(r.frage_nr).strip().isdigit():
+                out.append(int(str(r.frage_nr).strip()))
+            elif r.status != "fertig":
+                out.extend(r.planned_numbers)
+        return out
+
+    def recent_solutions(self, limit: int = 40) -> list[str]:
         out: list[str] = []
         for r in self.ordered():
             if r.loesung and r.loesung not in out:
@@ -93,11 +105,11 @@ class RoundStore:
         return out
 
     # ----- Schreiben ---------------------------------------------------
-    def register(self, conversation_id: str, planned_region: str, name: str, ort: str) -> Round:
+    def register(self, conversation_id: str, planned_numbers: list[int], name: str, ort: str) -> Round:
         rnd = Round(
             conversation_id=conversation_id,
             start_time=int(time.time()),
-            planned_region=planned_region,
+            planned_numbers=list(planned_numbers),
             kandidat_name=name or None,
             kandidat_ort=ort or None,
         )

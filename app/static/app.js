@@ -5,7 +5,7 @@
   const $ = (id) => document.getElementById(id);
   const el = {
     dot: $("status-dot"), label: $("status-label"), hint: $("status-hint"),
-    region: $("region"), timer: $("timer"), name: $("name"), ort: $("ort"),
+    timer: $("timer"), name: $("name"), ort: $("ort"),
     start: $("btn-start"), startText: $("btn-start-text"),
     mute: $("btn-mute"), muteText: $("btn-mute-text"), micOn: $("icon-mic-on"), micOff: $("icon-mic-off"),
     end: $("btn-end"), message: $("message"), rounds: $("rounds"),
@@ -16,7 +16,7 @@
 
   let conversation = null;
   let conversationId = null;
-  let plannedRegion = null;
+  let planned = [];
   let muted = false;
   let timerHandle = null;
   let startedAt = 0;
@@ -59,7 +59,6 @@
     el.startText.textContent = "Start";
     el.mute.disabled = !live;
     el.end.disabled = !live;
-    el.region.disabled = live;
     el.name.disabled = live;
     el.ort.disabled = live;
   }
@@ -84,7 +83,7 @@
       const time = d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
       const day = d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
       const who = [r.kandidat_name, r.kandidat_ort].filter(Boolean).join(", ") || "Kandidat unbekannt";
-      const parts = [r.region || r.planned_region, r.kategorie, r.loesung].filter(Boolean);
+      const parts = [r.kategorie, r.loesung, r.region].filter(Boolean);
       let result = "";
       if (r.ergebnis) {
         const ok = /richtig/i.test(r.ergebnis);
@@ -109,13 +108,7 @@
   async function loadState() {
     try {
       const s = await api("/api/state");
-      if (!el.region.options.length) {
-        for (const name of s.regions) {
-          const o = document.createElement("option");
-          o.value = name; o.textContent = name; el.region.appendChild(o);
-        }
-      }
-      if (!conversation) el.region.value = s.next_region;
+      if (s.pool && !s.pool.fragen) showMessage("Fragenpool nicht geladen: " + (s.pool.fehler || "unbekannt") + ". Die KI nutzt dann ihre Wissensbasis.", true);
       renderRounds(s.rounds);
       el.footerVersion.textContent = "Studio-Dashboard " + s.version;
       el.footerConn.textContent = "Verbindung: " + s.connection_type + (s.code ? " · Zugangscode aktiv" : "");
@@ -170,10 +163,9 @@
     try {
       // Mikrofon im Klick öffnen, damit der Browser nicht blockt
       try { await navigator.mediaDevices.getUserMedia({ audio: true }); } catch (e) { throw new Error("Kein Mikrofonzugriff im Browser."); }
-      const body = { name: el.name.value, ort: el.ort.value, region: el.region.value };
+      const body = { name: el.name.value, ort: el.ort.value };
       const s = await api("/api/session", body);
-      plannedRegion = s.region;
-      el.region.value = s.region;
+      planned = s.planned || [];
       mock = !!s.mock;
       if (mock) {
         conversationId = "mock-" + Date.now();
@@ -181,7 +173,7 @@
           setMicMuted: () => {},
           endSession: async () => { onDisconnected({ reason: "user" }); },
         };
-        await api("/api/rounds/register", { conversation_id: conversationId, region: plannedRegion, name: el.name.value, ort: el.ort.value });
+        await api("/api/rounds/register", { conversation_id: conversationId, planned: planned, name: el.name.value, ort: el.ort.value });
         onConnected();
         return;
       }
@@ -191,7 +183,7 @@
         dynamicVariables: s.dynamic_variables,
         onConnect: ({ conversationId: id }) => {
           conversationId = id;
-          api("/api/rounds/register", { conversation_id: id, region: plannedRegion, name: el.name.value, ort: el.ort.value }).catch(() => {});
+          api("/api/rounds/register", { conversation_id: id, planned: planned, name: el.name.value, ort: el.ort.value }).catch(() => {});
           onConnected();
         },
         onDisconnect: (details) => onDisconnected(details),

@@ -57,6 +57,14 @@ async def get_conversation_token(agent_id: str) -> str:
     return token
 
 
+async def get_kb_text(doc_id: str) -> str:
+    data = await _get(f"/v1/convai/knowledge-base/{doc_id}")
+    text = data.get("extracted_inner_html") or ""
+    if not text:
+        raise ElevenLabsError(f"Dokument {doc_id} ohne Text")
+    return text
+
+
 async def list_conversations(agent_id: str, page_size: int = 30) -> list[dict]:
     data = await _get(
         "/v1/convai/conversations",

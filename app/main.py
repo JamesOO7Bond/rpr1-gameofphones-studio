@@ -19,8 +19,7 @@ from pydantic import BaseModel
 
 from . import elevenlabs
 from .access import COOKIE_MAX_AGE, COOKIE_NAME, CodePolicy, IpPolicy
-from .regions import REGION_NAMES, load_regions
-from .rotation import next_region
+from .questions import CATEGORIES, QuestionPool
 from .store import RoundStore
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -36,7 +35,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 app = FastAPI(title="RPR1. Game of Phones Studio", docs_url=None, redoc_url=None, openapi_url=None)
 ip_policy = IpPolicy()
 code_policy = CodePolicy()
-regions = load_regions()
+pool = QuestionPool()
 store = RoundStore(AGENT_ID)
 
 # Pfade, die ohne IP-Sperre und Code erreichbar sind
@@ -72,6 +71,10 @@ async def _startup() -> None:
         log.warning("MOCK_ELEVENLABS=1: keine echten ElevenLabs-Aufrufe")
         return
     try:
+        await pool.load()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Fragenpool konnte nicht geladen werden: %s", exc)
+    try:
         await store.refresh(force=True)
         log.info("Rundenspeicher aufgebaut: %d Gespräche", len(store.rounds))
     except Exception as exc:  # noqa: BLE001
@@ -81,7 +84,14 @@ async def _startup() -> None:
 # ----- Offene Endpunkte ---------------------------------------------------
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok", "version": VERSION, "ip_filter": ip_policy.active, "code": code_policy.active}
+    return {
+        "status": "ok",
+        "version": VERSION,
+        "ip_filter": ip_policy.active,
+        "code": code_policy.active,
+        "fragen": len(pool.questions),
+        "pool_fehler": pool.error,
+    }
 
 
 @app.get("/whoami")
@@ -144,39 +154,45 @@ async def index() -> FileResponse:
 async def state() -> dict:
     if not MOCK:
         await store.refresh()
-    history = store.region_history()
     return {
         "agent_id": AGENT_ID,
         "version": VERSION,
         "connection_type": CONNECTION_TYPE,
         "ip_filter": ip_policy.active,
         "code": code_policy.active,
-        "regions": REGION_NAMES,
-        "next_region": next_region(regions, history),
-        "recent_solutions": store.recent_solutions(),
+        "pool": pool.summary(),
         "rounds": [r.to_public() for r in store.ordered()[:12]],
     }
+
+
+@app.post("/api/pool/reload")
+async def reload_pool() -> dict:
+    await pool.load()
+    return pool.summary()
 
 
 class SessionRequest(BaseModel):
     name: str = ""
     ort: str = ""
-    region: str | None = None
 
 
 @app.post("/api/session")
 async def create_session(body: SessionRequest) -> dict:
-    history = store.region_history()
-    region = body.region if body.region in REGION_NAMES else next_region(regions, history)
-    solutions = store.recent_solutions()
+    if not MOCK:
+        if not pool.ready:
+            await pool.load()
+        await store.refresh(max_age=60)
+    picks = pool.pick_round(store.recent_numbers(), store.recent_solutions(), store.region_history())
     dynamic_variables = {
-        "region": region,
-        "gespielte_fragen": ", ".join(solutions) if solutions else "keine",
         "kandidat_name": body.name.strip()[:60],
         "kandidat_ort": body.ort.strip()[:60],
     }
+    for key in CATEGORIES:
+        q = picks.get(key)
+        dynamic_variables[f"frage_{key}"] = q.as_line() if q else "keine"
+    planned = [q.nr for q in picks.values()]
     if MOCK:
-        return {"mock": True, "connection_type": CONNECTION_TYPE, "region": region, "dynamic_variables": dynamic_variables}
+        return {"mock": True, "connection_type": CONNECTION_TYPE, "planned": planned, "dynamic_variables": dynamic_variables}
     try:
         if CONNECTION_TYPE == "webrtc":
             auth = {"conversation_token": await elevenlabs.get_conversation_token(AGENT_ID)}
@@ -185,19 +201,19 @@ async def create_session(body: SessionRequest) -> dict:
     except elevenlabs.ElevenLabsError as exc:
         log.error("Session: %s", exc)
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    return {"connection_type": CONNECTION_TYPE, "region": region, "dynamic_variables": dynamic_variables, **auth}
+    return {"connection_type": CONNECTION_TYPE, "planned": planned, "dynamic_variables": dynamic_variables, **auth}
 
 
 class RegisterRequest(BaseModel):
     conversation_id: str
-    region: str
+    planned: list[int] = []
     name: str = ""
     ort: str = ""
 
 
 @app.post("/api/rounds/register")
 async def register_round(body: RegisterRequest) -> dict:
-    rnd = store.register(body.conversation_id, body.region, body.name.strip(), body.ort.strip())
+    rnd = store.register(body.conversation_id, body.planned, body.name.strip(), body.ort.strip())
     return rnd.to_public()
 
 
@@ -207,7 +223,7 @@ async def sync_round(conversation_id: str) -> dict:
         rnd = store.rounds.get(conversation_id)
         if rnd:
             rnd.status = "fertig"
-            rnd.region = rnd.planned_region
+            rnd.frage_nr = str(rnd.planned_numbers[0]) if rnd.planned_numbers else None
             rnd.loesung = "Testlösung"
             rnd.ergebnis = "richtig"
             return rnd.to_public()

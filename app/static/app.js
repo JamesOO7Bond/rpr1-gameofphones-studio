@@ -17,7 +17,11 @@
   let conversation = null;
   let conversationId = null;
   let planned = [];
-  let muted = false;
+  let muted = false;          // manuell über den Stumm-Knopf
+  let agentSpeaking = false;
+  let autoMuted = false;      // automatisch, weil die KI spricht
+  const noInterrupt = $("no-interrupt");
+  try { noInterrupt.checked = localStorage.getItem("gop.noInterrupt") !== "0"; } catch (e) { noInterrupt.checked = true; }
   let timerHandle = null;
   let startedAt = 0;
   let mock = false;
@@ -189,9 +193,8 @@
         onDisconnect: (details) => onDisconnected(details),
         onError: (message) => showMessage("Fehler der Verbindung: " + message),
         onModeChange: ({ mode }) => {
-          if (!conversation || muted) return;
-          if (mode === "speaking") setStatus("live", "Live · KI spricht", "Die KI redet gerade.");
-          else setStatus("live", "Live · KI hört zu", "Verbunden mit dem Studio-Agenten.");
+          agentSpeaking = mode === "speaking";
+          applyMic();
         },
       };
       if (s.signed_url) opts.signedUrl = s.signed_url;
@@ -209,6 +212,8 @@
   }
 
   function onConnected() {
+    agentSpeaking = false;
+    autoMuted = false;
     setMuteUi(false);
     setLiveUi(true);
     startTimer();
@@ -235,13 +240,23 @@
     await loadState();
   }
 
+  // Mikro zur KI: zu, wenn manuell stumm ODER (Unterbrechungen aus UND KI spricht)
+  function applyMic() {
+    if (!conversation) return;
+    const auto = noInterrupt.checked && agentSpeaking;
+    const shouldMute = muted || auto;
+    try { conversation.setMicMuted(shouldMute); } catch (e) { showMessage("Mikro schalten fehlgeschlagen: " + e.message); return; }
+    autoMuted = auto && !muted;
+    if (muted) setStatus("muted", "Mikro stumm", "Die KI hört gerade nichts. Zum Weiterspielen Mikro an.");
+    else if (agentSpeaking && autoMuted) setStatus("live", "Live · KI spricht", "Mikro automatisch zu, Zwischenrufe unterbrechen nicht.");
+    else if (agentSpeaking) setStatus("live", "Live · KI spricht", "Die KI redet gerade und lässt sich unterbrechen.");
+    else setStatus("live", "Live · KI hört zu", "Verbunden mit dem Studio-Agenten.");
+  }
+
   function toggleMute() {
     if (!conversation) return;
-    const next = !muted;
-    try { conversation.setMicMuted(next); } catch (e) { showMessage("Stummschalten fehlgeschlagen: " + e.message); return; }
-    setMuteUi(next);
-    if (next) setStatus("muted", "Mikro stumm", "Die KI hört gerade nichts. Zum Weiterspielen Mikro an.");
-    else setStatus("live", "Live · KI hört zu", "Verbunden mit dem Studio-Agenten.");
+    setMuteUi(!muted);
+    applyMic();
   }
 
   async function end() {
@@ -254,6 +269,10 @@
   // ----- Verdrahtung -----------------------------------------------------
   el.start.addEventListener("click", start);
   el.mute.addEventListener("click", toggleMute);
+  noInterrupt.addEventListener("change", () => {
+    try { localStorage.setItem("gop.noInterrupt", noInterrupt.checked ? "1" : "0"); } catch (e) { /* leer */ }
+    applyMic();
+  });
   el.end.addEventListener("click", end);
   $("clear-candidate").addEventListener("click", () => { el.name.value = ""; el.ort.value = ""; });
   window.addEventListener("beforeunload", (e) => { if (conversation) { e.preventDefault(); e.returnValue = ""; } });

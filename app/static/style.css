@@ -175,3 +175,16 @@ body.login { display: flex; align-items: center; justify-content: center; min-he
   .timer { font-size: 32px; }
   .timer-box { text-align: left; }
 }
+
+/* Schalter Unterbrechungen */
+.toggle-card { padding: 16px 24px; }
+.switch { display: flex; align-items: center; gap: 16px; cursor: pointer; }
+.switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.switch-track { flex-shrink: 0; width: 64px; height: 36px; border-radius: 999px; background: var(--blue-mid); border: 2px solid var(--blue-line); position: relative; transition: background .15s; }
+.switch-thumb { position: absolute; top: 3px; left: 3px; width: 26px; height: 26px; border-radius: 50%; background: var(--sky-light); transition: transform .15s; }
+.switch input:checked + .switch-track { background: var(--sky); border-color: var(--sky); }
+.switch input:checked + .switch-track .switch-thumb { transform: translateX(28px); background: var(--white); }
+.switch input:focus-visible + .switch-track { outline: 3px solid var(--white); outline-offset: 2px; }
+.switch-text { display: flex; flex-direction: column; gap: 2px; }
+.switch-title { font-weight: 900; font-size: 22px; text-transform: uppercase; letter-spacing: 1px; }
+.switch-hint { color: var(--sky-light); font-size: 15px; }

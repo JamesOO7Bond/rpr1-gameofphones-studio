@@ -49,3 +49,11 @@ def test_rotation_spreads_regions():
         seen_regions |= q.regions
     assert len(set(nums)) == len(nums)  # keine Wiederholung in 15 Runden (Testpool ist klein)
     assert len(seen_regions) >= 6
+
+
+def test_heimat_and_natur_lists_with_parentheses_are_parsed():
+    p = _pool()
+    q = p.questions
+    # Zeile „HEIMAT (Städte, …): 8, 10, …“ und „NATUR (…): 3, …, 115“
+    assert "natur" in q[115].categories
+    assert "heimat" in q[154].categories

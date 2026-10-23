@@ -160,7 +160,7 @@ def parse_pool(texts: list[str]) -> dict[int, Question]:
                 if not re.search(r"\d", tail):
                     continue
                 key = _category_key(head_clean)
-                if key and head_clean.isupper():
+                if key and head_clean.split("(")[0].strip().isupper():
                     category_lists[key].update(_parse_numbers(tail))
                     continue
                 for reg in region_names:

@@ -90,6 +90,8 @@ async def health() -> dict:
         "ip_filter": ip_policy.active,
         "code": code_policy.active,
         "fragen": len(pool.questions),
+        "aktiv": pool.summary()["aktiv"],
+        "stufe": pool.summary()["stufe"],
         "pool_fehler": pool.error,
     }
 

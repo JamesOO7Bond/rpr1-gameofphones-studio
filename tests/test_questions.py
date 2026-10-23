@@ -57,3 +57,17 @@ def test_heimat_and_natur_lists_with_parentheses_are_parsed():
     # Zeile „HEIMAT (Städte, …): 8, 10, …“ und „NATUR (…): 3, …, 115“
     assert "natur" in q[115].categories
     assert "heimat" in q[154].categories
+
+
+def test_level_filter(monkeypatch):
+    p = _pool()
+    monkeypatch.setenv("FRAGEN_STUFE", "1")
+    picks = p.pick_round([], [], [], rng=random.Random(3))
+    from app.questions import LEVELS
+    assert all(LEVELS.get(q.nr) == "1" for q in picks.values())
+    from app.questions import Question
+    x = Question(nr=24, frage="f", antwort="a", categories={"heimat"})
+    assert x.blocked  # X
+    monkeypatch.setenv("FRAGEN_STUFE", "3")
+    assert x.blocked  # X bleibt raus
+    assert not Question(nr=154, frage="f", antwort="a").blocked

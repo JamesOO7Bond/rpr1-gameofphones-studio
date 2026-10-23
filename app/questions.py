@@ -37,6 +37,27 @@ CATEGORIES = {
 }
 
 NEVER = {9, 47}
+
+# Schwierigkeit laut Redaktion (Liste vom 23.10.2026): 1 leicht, 2 mittel, 3 schwer, X raus.
+# FRAGEN_STUFE legt die höchste erlaubte Stufe fest (Standard 1). Fragen ohne Einstufung
+# gelten als 2, bis die Redaktion sie bewertet hat.
+import json as _json
+from pathlib import Path as _Path
+
+try:
+    LEVELS: dict[int, str] = {
+        int(k): str(v).strip().upper()
+        for k, v in _json.loads((_Path(__file__).parent / "data" / "stufen.json").read_text(encoding="utf-8")).items()
+    }
+except (OSError, ValueError):
+    LEVELS = {}
+
+
+def max_level() -> int:
+    try:
+        return max(1, min(3, int(os.environ.get("FRAGEN_STUFE", "1"))))
+    except ValueError:
+        return 1
 LINE_RE = re.compile(r"^\s*(\d{1,3})\s*\|\s*(.+)$")
 FIELD_KEYS = ("Region", "Kategorie", "Frage", "Antwort", "Gilt auch", "Tabu", "Bonus", "Hinweis")
 
@@ -54,8 +75,17 @@ class Question:
     regions: set[str] = field(default_factory=set)
 
     @property
+    def level(self) -> str:
+        return LEVELS.get(self.nr, "2")
+
+    @property
     def blocked(self) -> bool:
-        return self.nr in NEVER or "NICHT VERWENDEN" in self.hinweis.upper()
+        if self.nr in NEVER or "NICHT VERWENDEN" in self.hinweis.upper():
+            return True
+        lv = self.level
+        if lv == "X" or not lv.isdigit():
+            return True
+        return int(lv) > max_level()
 
     def as_line(self) -> str:
         parts = [f"Nr {self.nr}", f"Frage: {self.frage}", f"Antwort: {self.antwort}"]
@@ -218,7 +248,14 @@ class QuestionPool:
                 per_cat[c] += 1
             for r in q.regions:
                 per_reg[r] = per_reg.get(r, 0) + 1
-        return {"fragen": len(self.questions), "kategorien": per_cat, "regionen": per_reg, "fehler": self.error}
+        return {
+            "fragen": len(self.questions),
+            "aktiv": sum(1 for q in self.questions.values() if not q.blocked and q.categories),
+            "stufe": max_level(),
+            "kategorien": per_cat,
+            "regionen": per_reg,
+            "fehler": self.error,
+        }
 
     def pick_round(
         self,
@@ -246,7 +283,12 @@ class QuestionPool:
                 and q.nr not in {p.nr for p in picks.values()}
             ]
             if not fresh:
-                fresh = [q for q in cands if q.nr not in {p.nr for p in picks.values()}] or cands
+                # Alle Fragen der Kategorie waren kürzlich dran: die am längsten nicht gespielte nehmen
+                pool_left = [q for q in cands if q.nr not in {p.nr for p in picks.values()}] or cands
+                def age(q: Question) -> int:
+                    return recent_numbers.index(q.nr) if q.nr in recent_numbers else 10_000
+                oldest = max(age(q) for q in pool_left)
+                fresh = [q for q in pool_left if age(q) == oldest]
             if not fresh:
                 continue
 

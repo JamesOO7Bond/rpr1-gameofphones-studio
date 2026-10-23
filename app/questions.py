@@ -282,6 +282,8 @@ class QuestionPool:
                 if q.nr not in recent_set and q.antwort.strip().lower() not in solutions
                 and q.nr not in {p.nr for p in picks.values()}
             ]
+            if not cands:
+                continue
             if not fresh:
                 # Alle Fragen der Kategorie waren kürzlich dran: die am längsten nicht gespielte nehmen
                 pool_left = [q for q in cands if q.nr not in {p.nr for p in picks.values()}] or cands

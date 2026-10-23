@@ -25,6 +25,7 @@ DEFAULT_DOC_IDS = {
     "stufe2": "DRNRjXRd4pOlLQ2JlsmZ",
     "kategorien": "goCpSUophjJwoOi3Z6KH",
     "regionen": "aNA5eOKsz6NkhI85edQ4",
+    "einfach": "EwSZBM9AAQQgp5AMGO9V",
 }
 
 CATEGORIES = {

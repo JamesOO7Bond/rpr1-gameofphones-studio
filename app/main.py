@@ -181,6 +181,8 @@ async def create_session(body: SessionRequest) -> dict:
     if not MOCK:
         if not pool.ready:
             await pool.load()
+        if not pool.ready:
+            raise HTTPException(status_code=503, detail="Fragenpool nicht geladen (" + (pool.error or "unbekannt") + "). Bitte Seite neu laden oder Armin Bescheid geben.")
         await store.refresh(max_age=60)
     picks = pool.pick_round(store.recent_numbers(), store.recent_solutions(), store.region_history())
     dynamic_variables = {

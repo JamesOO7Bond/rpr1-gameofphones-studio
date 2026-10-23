@@ -231,7 +231,23 @@ async def sync_round(conversation_id: str) -> dict:
             return rnd.to_public()
         raise HTTPException(status_code=404, detail="unbekannt")
     rnd = await store.sync(conversation_id)
+    _match_question(rnd)
     return rnd.to_public()
+
+
+def _match_question(rnd) -> None:
+    """Die KI kennt die Fragennummer im Nachhinein nicht; über die Lösung zuordnen."""
+    if rnd.frage_nr or not rnd.loesung:
+        return
+    sol = rnd.loesung.strip().lower()
+    for nr in rnd.planned_numbers:
+        q = pool.questions.get(nr)
+        if not q:
+            continue
+        variants = [q.antwort] + [v for v in q.gilt_auch.split(",") if v.strip()]
+        if any(v.strip().lower() in sol or sol in v.strip().lower() for v in variants if len(v.strip()) > 2):
+            rnd.frage_nr = str(nr)
+            return
 
 
 @app.get("/api/rounds")

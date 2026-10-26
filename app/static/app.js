@@ -10,6 +10,7 @@
     mute: $("btn-mute"), muteText: $("btn-mute-text"), micOn: $("icon-mic-on"), micOff: $("icon-mic-off"),
     end: $("btn-end"), message: $("message"), rounds: $("rounds"),
     inputDev: $("input-device"), outputDev: $("output-device"),
+    go: $("btn-go"), goText: $("btn-go-text"),
     badgeNet: $("badge-net"), badgeNetText: $("badge-net-text"),
     footerVersion: $("footer-version"), footerConn: $("footer-conn"),
   };
@@ -25,6 +26,13 @@
   let timerHandle = null;
   let startedAt = 0;
   let mock = false;
+
+  // Startbefehl der KI, identisch zum gesprochenen Befehl. Der Knopf „Runde starten“
+  // schickt ihn als Text und umgeht damit die Turn-Erkennung der Sprache.
+  const START_COMMAND = "Hey Siri, starte das RPR1 Game of Phones.";
+  const GO_TIMEOUT_MS = 10000;
+  let roundStarted = false;   // KI hat zu sprechen begonnen (per Knopf oder per Zuruf)
+  let goTimer = null;
 
   // ----- Hilfen ----------------------------------------------------------
   function setStatus(kind, label, hint) {
@@ -65,6 +73,48 @@
     el.end.disabled = !live;
     el.name.disabled = live;
     el.ort.disabled = live;
+    setGoUi(live ? "ready" : "off");
+  }
+  // Knopf „Runde starten“: off (nicht verbunden) | ready | sending | running (KI spricht, Runde läuft)
+  function setGoUi(state) {
+    el.go.disabled = state !== "ready";
+    el.go.classList.toggle("busy", state === "sending");
+    el.go.classList.toggle("running", state === "running");
+    el.goText.textContent = state === "sending" ? "Sende …" : state === "running" ? "Runde läuft" : "Runde starten";
+  }
+  function clearGoTimer() { if (goTimer) clearTimeout(goTimer); goTimer = null; }
+  function startRound() {
+    if (!conversation || roundStarted || el.go.disabled) return;
+    showMessage("");
+    setGoUi("sending");
+    try {
+      conversation.sendUserMessage(START_COMMAND);
+    } catch (e) {
+      setGoUi("ready");
+      showMessage("Startbefehl konnte nicht gesendet werden: " + e.message + ". Alternativ den Befehl sprechen.");
+      return;
+    }
+    // Reagiert die KI nicht, den Knopf wieder freigeben (kein stilles Hängen)
+    clearGoTimer();
+    goTimer = setTimeout(() => {
+      goTimer = null;
+      if (conversation && !roundStarted) {
+        setGoUi("ready");
+        showMessage("Die KI hat noch nicht geantwortet. Noch einmal drücken oder den Befehl sprechen.", true);
+      }
+    }, GO_TIMEOUT_MS);
+  }
+  // Wird bei jedem Moduswechsel der KI aufgerufen. Das erste Sprechen = Runde gestartet,
+  // egal ob per Knopf oder per Zuruf. Danach ist der Knopf gesperrt (kein zweiter Startbefehl mitten in der Runde).
+  function handleMode(mode) {
+    agentSpeaking = mode === "speaking";
+    if (agentSpeaking && !roundStarted) {
+      roundStarted = true;
+      clearGoTimer();
+      setGoUi("running");
+      showMessage("");
+    }
+    applyMic();
   }
   async function api(path, body) {
     const opts = body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {};
@@ -175,6 +225,12 @@
         conversationId = "mock-" + Date.now();
         conversation = {
           setMicMuted: () => {},
+          sendUserMessage: (text) => {
+            window.__mockSent = (window.__mockSent || []).concat([text]);
+            if (window.__mockNoReply) return;   // Test: KI antwortet nicht
+            setTimeout(() => handleMode("speaking"), 400);
+            setTimeout(() => handleMode("listening"), 2500);
+          },
           endSession: async () => { onDisconnected({ reason: "user" }); },
         };
         await api("/api/rounds/register", { conversation_id: conversationId, planned: planned, name: el.name.value, ort: el.ort.value });
@@ -192,10 +248,7 @@
         },
         onDisconnect: (details) => onDisconnected(details),
         onError: (message) => showMessage("Fehler der Verbindung: " + message),
-        onModeChange: ({ mode }) => {
-          agentSpeaking = mode === "speaking";
-          applyMic();
-        },
+        onModeChange: ({ mode }) => handleMode(mode),
       };
       if (s.signed_url) opts.signedUrl = s.signed_url;
       if (s.conversation_token) opts.conversationToken = s.conversation_token;
@@ -214,10 +267,12 @@
   function onConnected() {
     agentSpeaking = false;
     autoMuted = false;
+    roundStarted = false;
+    clearGoTimer();
     setMuteUi(false);
     setLiveUi(true);
     startTimer();
-    setStatus("live", "Live · KI hört zu", "Verbunden. Jetzt off air den Kandidaten ansagen.");
+    setStatus("live", "Live · KI hört zu", "Verbunden. Off air den Kandidaten ansagen, dann „Runde starten“ drücken.");
     loadDevices();
   }
 
@@ -225,6 +280,8 @@
     stopTimer();
     const id = conversationId;
     conversation = null;
+    roundStarted = false;
+    clearGoTimer();
     setLiveUi(false);
     setMuteUi(false);
     const reason = details && details.reason ? details.reason : "";
@@ -268,6 +325,7 @@
 
   // ----- Verdrahtung -----------------------------------------------------
   el.start.addEventListener("click", start);
+  el.go.addEventListener("click", startRound);
   el.mute.addEventListener("click", toggleMute);
   noInterrupt.addEventListener("change", () => {
     try { localStorage.setItem("gop.noInterrupt", noInterrupt.checked ? "1" : "0"); } catch (e) { /* leer */ }

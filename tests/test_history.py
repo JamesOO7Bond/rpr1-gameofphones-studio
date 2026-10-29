@@ -25,12 +25,18 @@ def test_grenze_blendet_proberunden_aus():
     assert s.region_history() == ["Hunsrück"]
 
 
-def test_reset_vergisst_alles_bisherige():
-    s = _store()
-    s.reset_history()
-    assert s.recent_numbers() == []
-    assert s.recent_solutions() == []
-    assert s.region_history() == []
+def test_standardgrenze_vergisst_proberunden(monkeypatch):
+    monkeypatch.delenv("HISTORY_FROM", raising=False)
+    s = RoundStore("a")
+    assert s.history_from == 1793273400
+    s.rounds["probe"] = Round("probe", 1793269087, status="fertig", frage_nr="92")
+    s.rounds["echt"] = Round("echt", 1793273500, status="fertig", frage_nr="110")
+    assert s.recent_numbers() == [110]
+
+
+def test_null_schaltet_grenze_ab(monkeypatch):
+    monkeypatch.setenv("HISTORY_FROM", "0")
+    assert RoundStore("a").history_from == 0
 
 
 def test_env_grenze(monkeypatch):

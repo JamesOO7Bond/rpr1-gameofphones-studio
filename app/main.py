@@ -174,14 +174,6 @@ async def reload_pool() -> dict:
     return pool.summary()
 
 
-@app.post("/api/history/reset")
-async def reset_history() -> dict:
-    """Proberunden vergessen: ab jetzt zählen nur Runden ab diesem Moment für „schon gespielt“."""
-    ts = store.reset_history()
-    log.info("Historie zurückgesetzt ab %s", ts)
-    return {"history_from": ts}
-
-
 class SessionRequest(BaseModel):
     name: str = ""
     ort: str = ""

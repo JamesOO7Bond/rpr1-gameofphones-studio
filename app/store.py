@@ -50,11 +50,14 @@ class Round:
         return d
 
 
+# Proberunden bis 29.10.2026 12:30 Uhr zählen nicht als „schon gespielt“ (Wunsch Holger/Armin).
+DEFAULT_HISTORY_FROM = "2026-10-29T12:30:00+01:00"
+
+
 def _env_history_from() -> int:
-    """Rundenhistorie erst ab diesem Zeitpunkt zählen (HISTORY_FROM, ISO-Datum oder Unix-Sekunden). 0 = alles."""
-    raw = os.environ.get("HISTORY_FROM", "").strip()
-    if not raw:
-        return 0
+    """Rundenhistorie erst ab diesem Zeitpunkt zählen (HISTORY_FROM, ISO-Datum oder Unix-Sekunden).
+    Ohne Angabe gilt DEFAULT_HISTORY_FROM; „0“ schaltet die Grenze ab."""
+    raw = os.environ.get("HISTORY_FROM", "").strip() or DEFAULT_HISTORY_FROM
     if raw.isdigit():
         return int(raw)
     try:
@@ -96,11 +99,6 @@ class RoundStore:
     def history(self) -> list[Round]:
         """Runden, die für die Auswahl zählen (neueste zuerst). Ältere Proberunden bleiben außen vor."""
         return [r for r in self.ordered() if r.start_time >= self.history_from]
-
-    def reset_history(self) -> int:
-        """Ab jetzt zählen nur noch neue Runden. Gilt bis zum nächsten Neustart; danach greift HISTORY_FROM."""
-        self.history_from = int(time.time())
-        return self.history_from
 
     def region_history(self) -> list[str]:
         """Gespielte Regionen, neueste zuerst. Geplante Region als Rückfall."""

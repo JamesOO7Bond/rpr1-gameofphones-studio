@@ -164,6 +164,12 @@
       const s = await api("/api/state");
       if (s.pool && !s.pool.fragen) showMessage("Fragenpool nicht geladen: " + (s.pool.fehler || "unbekannt") + ". Die KI nutzt dann ihre Wissensbasis.", true);
       renderRounds(s.rounds);
+      const note = $("history-note");
+      if (note) {
+        note.textContent = s.history_from
+          ? "Als „schon gespielt“ zählen nur Runden ab " + new Date(s.history_from * 1000).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" }) + " Uhr."
+          : "";
+      }
       el.footerVersion.textContent = "Studio-Dashboard " + s.version;
       el.footerConn.textContent = "Verbindung: " + s.connection_type + (s.code ? " · Zugangscode aktiv" : "");
       if (s.ip_filter) {
@@ -202,6 +208,16 @@
   }
   el.inputDev.addEventListener("change", () => { try { localStorage.setItem("gop.input", el.inputDev.value); } catch (e) { /* leer */ } });
   el.outputDev.addEventListener("change", () => { try { localStorage.setItem("gop.output", el.outputDev.value); } catch (e) { /* leer */ } });
+  $("reset-history").addEventListener("click", async () => {
+    if (!window.confirm("Alle bisherigen Runden als Proberunden behandeln? Danach darf die KI wieder jede Frage stellen, Wiederholungen werden erst ab jetzt vermieden.")) return;
+    try {
+      await api("/api/history/reset", {});
+      await loadState();
+      showMessage("Erledigt: Ab jetzt zählen nur neue Runden als „schon gespielt“.", true);
+    } catch (err) {
+      showMessage("Zurücksetzen fehlgeschlagen: " + err.message);
+    }
+  });
   $("refresh-devices").addEventListener("click", async () => {
     try { await navigator.mediaDevices.getUserMedia({ audio: true }); } catch (e) { /* abgelehnt */ }
     loadDevices();

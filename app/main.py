@@ -163,6 +163,7 @@ async def state() -> dict:
         "ip_filter": ip_policy.active,
         "code": code_policy.active,
         "pool": pool.summary(),
+        "history_from": store.history_from or None,
         "rounds": [r.to_public() for r in store.ordered()[:12]],
     }
 
@@ -171,6 +172,14 @@ async def state() -> dict:
 async def reload_pool() -> dict:
     await pool.load()
     return pool.summary()
+
+
+@app.post("/api/history/reset")
+async def reset_history() -> dict:
+    """Proberunden vergessen: ab jetzt zählen nur Runden ab diesem Moment für „schon gespielt“."""
+    ts = store.reset_history()
+    log.info("Historie zurückgesetzt ab %s", ts)
+    return {"history_from": ts}
 
 
 class SessionRequest(BaseModel):

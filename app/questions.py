@@ -26,6 +26,7 @@ DEFAULT_DOC_IDS = {
     "kategorien": "goCpSUophjJwoOi3Z6KH",
     "regionen": "aNA5eOKsz6NkhI85edQ4",
     "einfach": "EwSZBM9AAQQgp5AMGO9V",
+    "musik2": "eL6HWx2cyCpwIobb5ei8",
 }
 
 CATEGORIES = {

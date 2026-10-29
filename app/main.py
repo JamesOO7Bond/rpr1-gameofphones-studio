@@ -163,6 +163,7 @@ async def state() -> dict:
         "ip_filter": ip_policy.active,
         "code": code_policy.active,
         "pool": pool.summary(),
+        "history_from": store.history_from or None,
         "rounds": [r.to_public() for r in store.ordered()[:12]],
     }
 

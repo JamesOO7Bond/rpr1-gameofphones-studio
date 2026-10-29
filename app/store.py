@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -49,6 +50,26 @@ class Round:
         return d
 
 
+# Proberunden bis 29.10.2026 12:30 Uhr zählen nicht als „schon gespielt“ (Wunsch Holger/Armin).
+DEFAULT_HISTORY_FROM = "2026-10-29T12:30:00+01:00"
+
+
+def _env_history_from() -> int:
+    """Rundenhistorie erst ab diesem Zeitpunkt zählen (HISTORY_FROM, ISO-Datum oder Unix-Sekunden).
+    Ohne Angabe gilt DEFAULT_HISTORY_FROM; „0“ schaltet die Grenze ab."""
+    raw = os.environ.get("HISTORY_FROM", "").strip() or DEFAULT_HISTORY_FROM
+    if raw.isdigit():
+        return int(raw)
+    try:
+        dt = datetime.fromisoformat(raw)
+    except ValueError:
+        log.warning("HISTORY_FROM nicht lesbar: %r", raw)
+        return 0
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return int(dt.timestamp())
+
+
 def _field(results: dict, name: str) -> str | None:
     item = results.get(name)
     if isinstance(item, dict):
@@ -68,16 +89,21 @@ class RoundStore:
         self.agent_id = agent_id
         self.rounds: dict[str, Round] = {}
         self.last_refresh = 0.0
+        self.history_from = _env_history_from()
         self._lock = asyncio.Lock()
 
     # ----- Lesen -------------------------------------------------------
     def ordered(self) -> list[Round]:
         return sorted(self.rounds.values(), key=lambda r: r.start_time, reverse=True)
 
+    def history(self) -> list[Round]:
+        """Runden, die für die Auswahl zählen (neueste zuerst). Ältere Proberunden bleiben außen vor."""
+        return [r for r in self.ordered() if r.start_time >= self.history_from]
+
     def region_history(self) -> list[str]:
         """Gespielte Regionen, neueste zuerst. Geplante Region als Rückfall."""
         out: list[str] = []
-        for r in self.ordered():
+        for r in self.history():
             if r.status == "ohne_analyse" and not r.region:
                 continue
             name = r.region or r.planned_region
@@ -88,7 +114,7 @@ class RoundStore:
     def recent_numbers(self) -> list[int]:
         """Gespielte Fragennummern, neueste zuerst; ohne Auswertung zählen alle sechs vorgeschlagenen."""
         out: list[int] = []
-        for r in self.ordered():
+        for r in self.history():
             if r.frage_nr and str(r.frage_nr).strip().isdigit():
                 out.append(int(str(r.frage_nr).strip()))
             elif r.status != "fertig":
@@ -97,7 +123,7 @@ class RoundStore:
 
     def recent_solutions(self, limit: int = 40) -> list[str]:
         out: list[str] = []
-        for r in self.ordered():
+        for r in self.history():
             if r.loesung and r.loesung not in out:
                 out.append(r.loesung)
             if len(out) >= limit:

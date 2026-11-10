@@ -1,7 +1,7 @@
 import random
 from pathlib import Path
 
-from app.questions import QuestionPool, parse_pool
+from app.questions import Question, QuestionPool, parse_pool
 
 FIX = Path(__file__).parent / "fixtures"
 
@@ -71,3 +71,18 @@ def test_level_filter(monkeypatch):
     monkeypatch.setenv("FRAGEN_STUFE", "3")
     assert x.blocked  # X bleibt raus
     assert not Question(nr=154, frage="f", antwort="a").blocked
+
+
+def test_musik_darf_eine_stufe_hoeher(monkeypatch):
+    from app import questions as qm
+    monkeypatch.delenv("FRAGEN_STUFE", raising=False)
+    monkeypatch.delenv("MUSIK_STUFE", raising=False)
+    monkeypatch.setitem(qm.LEVELS, 9001, "2")
+    monkeypatch.setitem(qm.LEVELS, 9002, "3")
+    mid = Question(nr=9001, frage="f", antwort="a", categories={"musik", "promis"})
+    hard = Question(nr=9002, frage="f", antwort="a", categories={"musik"})
+    assert not mid.blocked_in("musik")      # mittel ist in Musik erlaubt
+    assert mid.blocked_in("promis")         # in anderen Kategorien weiter gesperrt
+    assert hard.blocked_in("musik")         # schwer bleibt gesperrt
+    monkeypatch.setenv("MUSIK_STUFE", "1")
+    assert mid.blocked_in("musik")          # Schalter zurück auf leicht

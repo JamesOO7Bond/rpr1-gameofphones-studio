@@ -26,6 +26,7 @@ DEFAULT_DOC_IDS = {
     "kategorien": "goCpSUophjJwoOi3Z6KH",
     "regionen": "aNA5eOKsz6NkhI85edQ4",
     "einfach": "EwSZBM9AAQQgp5AMGO9V",
+    "musik2": "eL6HWx2cyCpwIobb5ei8",
 }
 
 CATEGORIES = {
@@ -54,11 +55,19 @@ except (OSError, ValueError):
     LEVELS = {}
 
 
-def max_level() -> int:
+def max_level(cat: str | None = None) -> int:
+    """Höchste erlaubte Stufe. Musik hat eine eigene Grenze (MUSIK_STUFE, Standard 2), weil dort
+    in Stufe 1 zu wenige Fragen liegen; sie ist nie niedriger als FRAGEN_STUFE."""
     try:
-        return max(1, min(3, int(os.environ.get("FRAGEN_STUFE", "1"))))
+        base = max(1, min(3, int(os.environ.get("FRAGEN_STUFE", "1"))))
     except ValueError:
-        return 1
+        base = 1
+    if cat == "musik":
+        try:
+            return max(base, min(3, int(os.environ.get("MUSIK_STUFE", "2"))))
+        except ValueError:
+            return max(base, 2)
+    return base
 LINE_RE = re.compile(r"^\s*(\d{1,3})\s*\|\s*(.+)$")
 FIELD_KEYS = ("Region", "Kategorie", "Frage", "Antwort", "Gilt auch", "Tabu", "Bonus", "Hinweis")
 
@@ -87,6 +96,15 @@ class Question:
         if lv == "X" or not lv.isdigit():
             return True
         return int(lv) > max_level()
+
+    def blocked_in(self, cat: str) -> bool:
+        """Wie `blocked`, aber mit der Stufe der Kategorie (Musik darf höher liegen)."""
+        if not self.blocked:
+            return False
+        if self.nr in NEVER or "NICHT VERWENDEN" in self.hinweis.upper():
+            return True
+        lv = self.level
+        return not (lv.isdigit() and int(lv) <= max_level(cat))
 
     def as_line(self) -> str:
         parts = [f"Nr {self.nr}", f"Frage: {self.frage}", f"Antwort: {self.antwort}"]
@@ -243,15 +261,16 @@ class QuestionPool:
         per_cat = {k: 0 for k in CATEGORIES}
         per_reg: dict[str, int] = {}
         for q in self.questions.values():
+            for c in q.categories:
+                if not q.blocked_in(c):
+                    per_cat[c] += 1
             if q.blocked:
                 continue
-            for c in q.categories:
-                per_cat[c] += 1
             for r in q.regions:
                 per_reg[r] = per_reg.get(r, 0) + 1
         return {
             "fragen": len(self.questions),
-            "aktiv": sum(1 for q in self.questions.values() if not q.blocked and q.categories),
+            "aktiv": sum(1 for q in self.questions.values() if any(not q.blocked_in(c) for c in q.categories)),
             "stufe": max_level(),
             "kategorien": per_cat,
             "regionen": per_reg,
@@ -277,7 +296,7 @@ class QuestionPool:
         order = list(CATEGORIES)
         rng.shuffle(order)
         for cat in order:
-            cands = [q for q in self.questions.values() if cat in q.categories and not q.blocked]
+            cands = [q for q in self.questions.values() if cat in q.categories and not q.blocked_in(cat)]
             fresh = [
                 q for q in cands
                 if q.nr not in recent_set and q.antwort.strip().lower() not in solutions
